@@ -1,0 +1,166 @@
+Program.Sub.Preflight.Start
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+'Customer: Western Container Corporation
+'Developer: FEQ (Sisco)
+'Date: June 15
+'This is a script that will be attached to two different hooks:
+'Hook 15880 runs from the process button when an employee updates a job with good quantity.
+'The piece attached to this update hook will compare the total amount of good pieces being submitted against the quantity expected on the line
+'If the total amount of pieces goes past 110% on the amount expected, the script will notify the user and request reafirmation.
+
+F.Intrinsic.Control.Try
+V.Local.sError.Declare(String, "")
+V.Local.sJob.Declare(String, "")
+V.Local.sSuff.Declare(String, "")
+V.Local.sSeq.Declare(String, "")
+V.Local.sSql.Declare(String, "")
+v.Local.sTemp.Declare(String, "")
+V.Local.sMessage.Declare(String, "")
+V.Local.sPurchaseOrd.Declare(String, "")
+V.Local.sLine.Declare(String, "")
+V.Local.fSubmQty.Declare(Float, 0.00)
+V.Local.fPrevQty.Declare(Float, 0.00)
+V.Local.fLineQty.Declare(Float, 0.00)
+V.Local.fCalculation.Declare(Float, 0.00)
+V.Local.iReturn.Declare(Long, 0)
+
+F.Intrinsic.Control.SelectCase(V.Caller.Hook)
+F.Intrinsic.Control.Case(15880)
+	'This is from the shop floor control- We are going to collect the Job, Suffix and Sequence
+	V.Local.sJob.Set(V.Passed.009990)
+	V.Local.sSuff.Set(V.Passed.009991)
+	V.Local.sSeq.Set(V.Passed.009992)
+	
+	V.Local.fSubmQty.Set(V.Passed.000001.Float)
+	
+	F.ODBC.Connection!conx.OpenCompanyConnection
+	
+	F.Intrinsic.String.Build("Select SUM(PIECES_COMPLTD) from V_JOB_DETAIL where JOB = '{0}' and SUFFIX = '{1}' and SEQ = '{2}'", V.Local.sJob, V.Local.sSuff, V.Local.sSeq, V.Local.sSql)
+	
+	F.ODBC.Connection!conx.ExecuteAndReturn(V.Local.sSql, V.Local.sTemp)
+	
+	V.Local.fPrevQty.Set(V.Local.sTemp.Float)
+	
+	F.Intrinsic.String.Build("Select Top 1 UNITS_OPEN, UNITS_COMPLETE from V_JOB_OPERATIONS where JOB = '{0}' and SUFFIX = '{1}' and SEQ = '{2}'", V.Local.sJob, V.Local.sSuff, V.Local.sSeq, V.Local.sSql)
+	
+	F.ODBC.Connection!conx.ExecuteAndReturn(V.Local.sSql, V.Local.sTemp)
+	
+	F.Intrinsic.Control.If(V.Local.sTemp.Trim, <>, "")
+		F.Intrinsic.String.Split(V.Local.sTemp, "*!*", V.Local.sTemp)
+		V.Local.sTemp.RedimPreserve(0,1)
+		V.Local.fLineQty.Set(V.Local.sTemp(0).Float)
+		F.Intrinsic.Control.If(V.Local.fPrevQty, =, 0)
+			V.Local.fPrevQty.Set(V.Local.sTemp(1).Float)
+		F.Intrinsic.Control.EndIf
+		
+	F.Intrinsic.Control.Else
+		'If the program 
+		F.Intrinsic.Control.End
+	F.Intrinsic.Control.EndIf
+	
+	F.ODBC.Connection!conx.Close
+	
+	'We want to check and see if the total amount that was previously saved and what is being added is 110% of what is expected
+	F.Intrinsic.Math.Add(V.Local.fPrevQty, V.Local.fSubmQty, V.Local.fCalculation)
+	
+	F.Intrinsic.Control.If(V.Local.fLineQty, =, 0)
+		F.Intrinsic.Control.End
+	F.Intrinsic.Control.EndIf
+	
+	F.Intrinsic.Math.Div(V.Local.fCalculation, V.Local.fLineQty, V.Local.fCalculation)
+	
+	F.Intrinsic.Control.If(V.Local.fCalculation, >, 1.1)
+		'Notify that the total amount being submitted is 10% more than the line expects and ask if they wish to continue
+		
+		F.Intrinsic.Math.Add(V.Local.fPrevQty, V.Local.fSubmQty, V.Local.fCalculation)
+		
+		F.Intrinsic.String.Build("The amount of material you are attempting to process exceeds the expected quantity for the line by 10% or more.{0}The line has {1} units completed already and you are attempting to add {2} more units, for a total of {3} units.{0}The total units the line expects is {4}.{0}{0}{0}Are you sure you want to continue?", V.Ambient.NewLine, V.Local.fPrevQty, V.Local.fSubmQty, V.Local.fCalculation, V.Local.fLineQty, V.Local.sMessage)
+		
+		'Flag 3 for the message box displays a messagebox with a YES, NO, CANCEL button
+		F.Intrinsic.UI.Msgbox(V.Local.sMessage, "HIGH COUNT PARTS", 3, V.Local.iReturn)
+		
+		'Return values are expected to be 2 - Cancel, 6 - YES, 7 NO.
+		F.Intrinsic.Control.If(V.Local.iReturn, <>, 6)
+			V.Passed.777777.Set(Y)
+		
+		F.Intrinsic.Control.EndIf
+		
+	F.Intrinsic.Control.EndIf
+	
+F.Intrinsic.Control.Case(15030)
+	
+	V.Local.sPurchaseOrd.Set(V.Passed.000002.Trim)
+	F.Intrinsic.String.LPad(V.Passed.000002.Trim, "0", 7, V.Local.sPurchaseOrd)
+	F.Intrinsic.String.LPad(V.Passed.000070.Trim, "0", 3, V.Local.sLine)
+	
+	V.Local.fSubmQty.Set(V.Passed.000139.Float)
+	
+	F.ODBC.Connection!conx.OpenCompanyConnection
+	
+	F.Intrinsic.String.Build("Select SUM(QTY_RECEIVED) from V_PO_RECEIVER where PURCHASE_ORDER = '{0}' and PO_LINE = '{1}' ", V.Local.sPurchaseOrd, V.Local.sLine, V.Local.sSql)
+	
+	F.ODBC.Connection!conx.ExecuteAndReturn(V.Local.sSql, V.Local.sTemp)
+	
+	V.Local.fPrevQty.Set(V.Local.sTemp.Float)
+	
+	F.Intrinsic.String.RPad(V.Local.sLine, "0", 4, V.Local.sLine)
+
+	F.Intrinsic.String.Build("Select Top 1 QTY_ORDER from V_PO_LINES where PURCHASE_ORDER = '{0}' and RECORD_NO = '{1}'", V.Local.sPurchaseOrd, V.Local.sLine, V.Local.sSql)
+	
+	F.ODBC.Connection!conx.ExecuteAndReturn(V.Local.sSql, V.Local.sTemp)
+	
+	F.Intrinsic.Control.If(V.Local.sTemp.Trim, <>, "")
+		F.Intrinsic.String.Split(V.Local.sTemp, "*!*", V.Local.sTemp)
+		V.Local.sTemp.RedimPreserve(0,1)
+		V.Local.fLineQty.Set(V.Local.sTemp(0).Float)
+'		F.Intrinsic.Control.If(V.Local.fPrevQty, =, 0)
+'			V.Local.fPrevQty.Set(V.Local.sTemp(1).Float)
+'		F.Intrinsic.Control.EndIf
+		
+	F.Intrinsic.Control.Else
+		'If the program 
+		F.Intrinsic.Control.End
+	F.Intrinsic.Control.EndIf
+	
+	F.ODBC.Connection!conx.Close
+	
+	'We want to check and see if the total amount that was previously saved and what is being added is 110% of what is expected
+	F.Intrinsic.Math.Add(V.Local.fPrevQty, V.Local.fSubmQty, V.Local.fCalculation)
+	
+	F.Intrinsic.Control.If(V.Local.fLineQty, =, 0)
+		F.Intrinsic.Control.End
+	F.Intrinsic.Control.EndIf
+	
+	F.Intrinsic.Math.Div(V.Local.fCalculation, V.Local.fLineQty, V.Local.fCalculation)
+	
+	F.Intrinsic.Control.If(V.Local.fCalculation, >, 1.1)
+		'Notify that the total amount being submitted is 10% more than the line expects and ask if they wish to continue
+		
+		F.Intrinsic.Math.Add(V.Local.fPrevQty, V.Local.fSubmQty, V.Local.fCalculation)
+		
+		F.Intrinsic.String.Build("The amount of inventory you are attempting to receive exceeds the expected quantity for the line by 10% or more.{0}The line has {1} units already received and you are attempting to add {2} more units, for a total of {3} units.{0}The total units the line expects is {4}.{0}{0}{0}Are you sure you want to continue?", V.Ambient.NewLine, V.Local.fPrevQty, V.Local.fSubmQty, V.Local.fCalculation, V.Local.fLineQty, V.Local.sMessage)
+		
+		'Flag 3 for the message box displays a messagebox with a YES, NO, CANCEL button
+		F.Intrinsic.UI.Msgbox(V.Local.sMessage, "HIGH COUNT PARTS", 3, V.Local.iReturn)
+		
+		'Return values are expected to be 2 - Cancel, 6 - YES, 7 NO.
+		F.Intrinsic.Control.If(V.Local.iReturn, <>, 6)
+			V.Passed.777777.Set(Y)
+		
+		F.Intrinsic.Control.EndIf
+		
+	F.Intrinsic.Control.EndIf
+	
+F.Intrinsic.Control.CaseElse
+	
+F.Intrinsic.Control.EndSelect
+
+F.Intrinsic.Control.Catch
+
+F.Intrinsic.String.Build("Project: {0}{1}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}{1}{1}GAB Version: {5}", V.Caller.ScriptFile, V.Ambient.Newline, V.Ambient.CurrentSubroutine, V.Ambient.ErrorNumber, V.Ambient.ErrorDescription, V.Ambient.GABVersion, V.Local.sError)
+F.Intrinsic.UI.Msgbox(V.Local.sError, "CRITICAL ERROR")
+
+F.Intrinsic.Control.EndTry
+Program.Sub.Main.End
